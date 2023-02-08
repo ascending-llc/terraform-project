@@ -1,0 +1,18 @@
+---
+- hosts: ec2-instance-web
+  become: yes
+  tasks:
+
+    - name: Enable amazon-linux-extras packages
+      shell: amazon-linux-extras enable nginx1
+
+    - name: Installs Nginx web server
+      yum: pkg=nginx state=present
+      notify:
+        - start nginx
+
+    - name: Upload default index.html for host
+      copy: src=./index.html dest=/usr/share/nginx/html/ mode=0644
+
+    - name: start Nginx
+      service: name=nginx state=started

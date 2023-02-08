@@ -64,11 +64,6 @@ resource "aws_route_table_association" "public" {
 resource "aws_route_table" "private_route_table" {
   vpc_id = aws_vpc.main_vpc.id
 
-#   route {
-#     cidr_block = "0.0.0.0/0"
-#     gateway_id = aws_internet_gateway.igw.id
-#   }
-
   tags = {
     Name    = "private subnets"
     Network = "private"
@@ -97,6 +92,13 @@ resource "aws_security_group" "public" {
   ingress {
     from_port = 443
     to_port = 443
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port = 22
+    to_port = 22
     protocol = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -133,6 +135,8 @@ resource "aws_instance" "web-server" {
   instance_type = "t2.micro"
   subnet_id = aws_subnet.public_subnet.id
   vpc_security_group_ids = [aws_security_group.public.id]
+  key_name      = aws_key_pair.generated_key.key_name
+  associate_public_ip_address = "true"
 
   tags = {
     Name = "Web Server"
@@ -147,4 +151,34 @@ resource "aws_instance" "database" {
   tags = {
     Name = "Database"
   }
+}
+
+
+######################################################################
+# generate ssh key for web-server instance and save to local
+######################################################################
+resource "tls_private_key" "web-server" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+resource "aws_key_pair" "generated_key" {
+  key_name   = "web-server-ssh-key"
+  public_key = tls_private_key.web-server.public_key_openssh
+
+  provisioner "local-exec" { # Create "web_server_key.pem" to your computer
+    command = "echo '${tls_private_key.web-server.private_key_pem}' > ./web_server_key.pem"
+  }
+}
+output "private_key" {
+  value     = tls_private_key.web-server.private_key_pem
+  sensitive = true
+}
+
+######################################################################
+# Provision ansible
+######################################################################
+resource "null_resource" "ansible" {
+    provisioner "local-exec" {
+        command = "ansible-playbook ./ansible/web_server.yaml -i ./ansible/inventory"
+    }
 }
