@@ -70,18 +70,19 @@ resource "aws_route_table" "private_route_table" {
   }
 }
 
-# PrivateSubnet01RouteTableAssociation
+# Private Subnet RouteTable Association
 resource "aws_route_table_association" "private" {
   subnet_id      = aws_subnet.private_subnet.id
   route_table_id = aws_route_table.private_route_table.id
 }
 
 ###############################################################
-# EC2 instances
+# Security Groups
 ###############################################################
 resource "aws_security_group" "public" {
   vpc_id = aws_vpc.main_vpc.id
 
+  # Open HTTP port
   ingress {
     from_port = 80
     to_port = 80
@@ -89,6 +90,7 @@ resource "aws_security_group" "public" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Open HTTPS port
   ingress {
     from_port = 443
     to_port = 443
@@ -96,6 +98,7 @@ resource "aws_security_group" "public" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Open SSH port
   ingress {
     from_port = 22
     to_port = 22
@@ -130,28 +133,57 @@ resource "aws_security_group" "private" {
   }
 }
 
+
+######################################################################
+# Provision Vault
+######################################################################
+# Read the secret from vault server
+data "vault_generic_secret" "read_vault" {
+  path = "kv/demo"
+}
+output "secrets" {
+  value     = data.vault_generic_secret.read_vault.data["data"]
+  sensitive = true
+  
+}
+
+###############################################################
+# EC2 instances
+###############################################################
+
+# Create web-server instance and launch ansible
 resource "aws_instance" "web-server" {
   ami           = "ami-0aa7d40eeae50c9a9"
-  instance_type = "t2.micro"
+  instance_type = var.instance_type
   subnet_id = aws_subnet.public_subnet.id
   vpc_security_group_ids = [aws_security_group.public.id]
   key_name      = aws_key_pair.generated_key.key_name
   associate_public_ip_address = "true"
+  user_data = <<-EOF
+
+    #!/bin/bash
+    sudo yum install git -y
+    sudo git clone https://github.com/daochidq/ansible_demo.git
+    sudo yum update -y
+    sudo amazon-linux-extras install ansible2 -y
+    sudo ansible-playbook /ansible_demo/web_server.yaml --extra-vars "valut_data='${data.vault_generic_secret.read_vault.data["data"]}'"
+  EOF
 
   tags = {
     Name = "Web Server"
   }
 }
 
-resource "aws_instance" "database" {
-  ami           = "ami-0aa7d40eeae50c9a9"
-  instance_type = "t2.micro"
-  subnet_id = aws_subnet.private_subnet.id
-  vpc_security_group_ids = [aws_security_group.private.id]
-  tags = {
-    Name = "Database"
-  }
-}
+
+# resource "aws_instance" "database" {
+#   ami           = "ami-0aa7d40eeae50c9a9"
+#   instance_type = var.instance_type
+#   subnet_id = aws_subnet.private_subnet.id
+#   vpc_security_group_ids = [aws_security_group.private.id]
+#   tags = {
+#     Name = "Database"
+#   }
+# }
 
 
 ######################################################################
@@ -172,13 +204,4 @@ resource "aws_key_pair" "generated_key" {
 output "private_key" {
   value     = tls_private_key.web-server.private_key_pem
   sensitive = true
-}
-
-######################################################################
-# Provision ansible
-######################################################################
-resource "null_resource" "ansible" {
-    provisioner "local-exec" {
-        command = "ansible-playbook ./ansible/web_server.yaml -i ./ansible/inventory"
-    }
 }
