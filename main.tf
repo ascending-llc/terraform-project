@@ -169,7 +169,7 @@ output "secrets" {
 # Create web-server instance and launch ansible
 resource "aws_instance" "web-server" {
   depends_on = [
-    tls_private_key.web-server
+    aws_key_pair.generated_key
   ]
   ami           = "ami-0aa7d40eeae50c9a9"
   instance_type = var.instance_type
