@@ -106,9 +106,17 @@ resource "aws_security_group" "public" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+  }
+
   tags = {
     Name = "demo-public-security-group"
   }
+  
 }
 
 resource "aws_security_group" "private" {
@@ -126,6 +134,13 @@ resource "aws_security_group" "private" {
     to_port = 443
     protocol = "tcp"
     security_groups = [aws_security_group.public.id]
+  }
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
   }
 
   tags = {
@@ -153,6 +168,9 @@ output "secrets" {
 
 # Create web-server instance and launch ansible
 resource "aws_instance" "web-server" {
+  depends_on = [
+    tls_private_key.web-server
+  ]
   ami           = "ami-0aa7d40eeae50c9a9"
   instance_type = var.instance_type
   subnet_id = aws_subnet.public_subnet.id
@@ -198,9 +216,13 @@ resource "aws_key_pair" "generated_key" {
   public_key = tls_private_key.web-server.public_key_openssh
 
   provisioner "local-exec" { # Create "web_server_key.pem" to your computer
-    command = "echo '${tls_private_key.web-server.private_key_pem}' > ./web_server_key.pem"
+    command = <<EOT
+     echo '${tls_private_key.web-server.private_key_pem}' > ./web_server_key.pem
+     chmod 400 ./web_server_key.pem
+     EOT
   }
 }
+
 output "private_key" {
   value     = tls_private_key.web-server.private_key_pem
   sensitive = true
