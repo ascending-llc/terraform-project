@@ -203,6 +203,9 @@ resource "aws_instance" "web-server" {
 #   }
 # }
 
+output "web-server-ip" {
+  value = aws_instance.web-server.public_ip
+}
 
 ######################################################################
 # generate ssh key for web-server instance and save to local
