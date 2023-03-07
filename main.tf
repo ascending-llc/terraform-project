@@ -215,6 +215,7 @@ resource "tls_private_key" "web-server" {
   rsa_bits  = 4096
 }
 resource "aws_key_pair" "generated_key" {
+  
   key_name   = "web-server-ssh-key"
   public_key = tls_private_key.web-server.public_key_openssh
 

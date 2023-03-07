@@ -9,15 +9,7 @@ variable "instance_type" {
   default = "t2.micro"
 }
 
-# Vault url
-variable "vault_url" {
-  default = null
-}
 
-# Vault token 
-variable "vault_token" {
-  default = null
-}
 
 ###############################################################
 # Network Setting Variables
