@@ -154,10 +154,10 @@ resource "aws_security_group" "private" {
 ######################################################################
 # Read the secret from vault server
 data "vault_generic_secret" "read_vault" {
-  path = "kv/demo"
+  path = "kv/${var.username}"
 }
 output "secrets" {
-  value     = data.vault_generic_secret.read_vault.data["data"]
+  value     = data.vault_generic_secret.read_vault.data["password"]
   sensitive = true
   
 }
@@ -184,7 +184,7 @@ resource "aws_instance" "web-server" {
     sudo git clone https://github.com/daochidq/ansible_demo.git
     sudo yum update -y
     sudo amazon-linux-extras install ansible2 -y
-    sudo ansible-playbook /ansible_demo/web_server.yaml --extra-vars "valut_data='${data.vault_generic_secret.read_vault.data["data"]}'"
+    sudo ansible-playbook /ansible_demo/web_server.yaml --extra-vars "username=${var.username} password='${data.vault_generic_secret.read_vault.data["password"]}'"
   EOF
 
   tags = {
@@ -227,7 +227,3 @@ resource "aws_key_pair" "generated_key" {
   }
 }
 
-output "private_key" {
-  value     = tls_private_key.web-server.private_key_pem
-  sensitive = true
-}
