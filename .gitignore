@@ -31,4 +31,4 @@ override.tf.json
 .DS_Store
 
 *.pem
-*.lock
+*.lock.hcl

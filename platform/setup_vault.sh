@@ -13,6 +13,7 @@ export VAULT_TOKEN=$vault_token
 export VAULT_ADDR=$vault_url
 
 add_secret=1
+vault secrets enable -path=demo kv
 
 while [ $add_secret -eq 1 ];
 do 
@@ -21,7 +22,7 @@ do
     echo "Enter Password:"
     read -s password
 
-    vault kv put kv/"$username" password=$password
+    vault kv put demo/"$username" password=$password
 
     echo "Username and password stored in Vault."
     echo "Do you want to store another username/password pair?[y/n]"

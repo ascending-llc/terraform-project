@@ -148,82 +148,168 @@ resource "aws_security_group" "private" {
   }
 }
 
+resource "aws_security_group" "vault" {
+  vpc_id = aws_vpc.main_vpc.id
 
-######################################################################
-# Provision Vault
-######################################################################
-# Read the secret from vault server
-data "vault_generic_secret" "read_vault" {
-  path = "kv/${var.username}"
-}
-output "secrets" {
-  value     = data.vault_generic_secret.read_vault.data["password"]
-  sensitive = true
+  # Open HTTP port
+  ingress {
+    from_port = 80
+    to_port = 80
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Open HTTPS port
+  ingress {
+    from_port = 443
+    to_port = 443
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Open SSH port
+  ingress {
+    from_port = 22
+    to_port = 22
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  
+  # Open vault port
+  ingress {
+    from_port = 8200
+    to_port = 8200
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "demo-vault-security-group"
+  }
   
 }
 
+######################################################################
+# generate ssh key for vault-server instance and save to local
+######################################################################
+resource "tls_private_key" "vault-server" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+resource "aws_key_pair" "generated_key" {
+  
+  key_name   = "vault_server_key"
+  public_key = tls_private_key.vault-server.public_key_openssh
+
+  provisioner "local-exec" { # Create "vault_server_key.pem" to your computer
+    command = <<EOT
+     echo '${tls_private_key.vault-server.private_key_pem}' >| ./vault_server_key.pem
+     chmod 400 ./vault_server_key.pem
+     EOT
+  }
+}
+
 ###############################################################
-# EC2 instances
+# Vault EC2 instance
 ###############################################################
 
-# Create web-server instance and launch ansible
-resource "aws_instance" "web-server" {
+# Create vault-server instance and launch vault
+resource "aws_instance" "vault-server" {
   depends_on = [
     aws_key_pair.generated_key
   ]
   ami           = "ami-0aa7d40eeae50c9a9"
   instance_type = var.instance_type
   subnet_id = aws_subnet.public_subnet.id
-  vpc_security_group_ids = [aws_security_group.public.id]
+  vpc_security_group_ids = [aws_security_group.vault.id]
   key_name      = aws_key_pair.generated_key.key_name
   associate_public_ip_address = "true"
   user_data = <<-EOF
 
     #!/bin/bash
-    sudo yum install git -y
-    sudo git clone https://github.com/daochidq/ansible_demo.git
     sudo yum update -y
-    sudo amazon-linux-extras install ansible2 -y
-    sudo ansible-playbook /ansible_demo/web_server.yaml --extra-vars "username=${var.username} password='${data.vault_generic_secret.read_vault.data["password"]}'"
+    cd /opt/ && sudo curl -o vault.zip  https://releases.hashicorp.com/vault/1.1.2/vault_1.1.2_linux_amd64.zip
+    sudo unzip vault.zip
+    sudo mv vault /usr/bin/
+    sudo useradd --system --home /etc/vault.d --shell /bin/false vault
+    sudo cat << EOF1 > /etc/systemd/system/vault.service
+          [Unit]
+          Description="HashiCorp Vault Service"
+          Requires=network-online.target
+          After=network-online.target
+          ConditionFileNotEmpty=/etc/vault.d/vault.hcl
+
+          [Service]
+          User=vault
+          Group=vault
+          ProtectSystem=full
+          ProtectHome=read-only
+          PrivateTmp=yes
+          PrivateDevices=yes
+          SecureBits=keep-caps
+          AmbientCapabilities=CAP_IPC_LOCK
+          Capabilities=CAP_IPC_LOCK+ep
+          CapabilityBoundingSet=CAP_SYSLOG CAP_IPC_LOCK
+          NoNewPrivileges=yes
+          ExecStart=/usr/bin/vault server -config=/etc/vault.d/vault.hcl
+          ExecReload=/bin/kill --signal HUP $MAINPID
+          StandardOutput=/logs/vault/output.log
+          StandardError=/logs/vault/error.log
+          KillMode=process
+          KillSignal=SIGINT
+          Restart=on-failure
+          RestartSec=5
+          TimeoutStopSec=30
+          StartLimitIntervalSec=60
+          StartLimitBurst=3
+          LimitNOFILE=65536
+
+          [Install]
+          WantedBy=multi-user.target
+      
+    EOF1
+ 
+    sudo mkdir /etc/vault.d
+    sudo chown -R vault:vault /etc/vault.d
+    sudo mkdir /vault-data
+    sudo chown -R vault:vault /vault-data
+    sudo mkdir -p /logs/vault/
+    sudo cat  << EOF2 > /etc/vault.d/vault.hcl
+          listener "tcp" {
+            address     = "0.0.0.0:8200"
+            tls_disable = 1
+          }
+
+          telemetry {
+            statsite_address = "127.0.0.1:8125"
+            disable_hostname = true
+          }
+
+          storage "file" {
+            path = "/vault-data"
+          }
+
+          ui = true
+    EOF2
+    sudo systemctl enable vault
+    sudo systemctl start vault
+
   EOF
 
   tags = {
-    Name = "Web Server"
+    Name = "Vault Server"
   }
 }
 
-
-# resource "aws_instance" "database" {
-#   ami           = "ami-0aa7d40eeae50c9a9"
-#   instance_type = var.instance_type
-#   subnet_id = aws_subnet.private_subnet.id
-#   vpc_security_group_ids = [aws_security_group.private.id]
-#   tags = {
-#     Name = "Database"
-#   }
-# }
-
-output "web-server-ip" {
-  value = aws_instance.web-server.public_ip
+output "vault-server-ip" {
+  value = "http://${aws_instance.vault-server.public_ip}:8200"
 }
 
-######################################################################
-# generate ssh key for web-server instance and save to local
-######################################################################
-resource "tls_private_key" "web-server" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
-resource "aws_key_pair" "generated_key" {
-  
-  key_name   = "web-server-ssh-key"
-  public_key = tls_private_key.web-server.public_key_openssh
-
-  provisioner "local-exec" { # Create "web_server_key.pem" to your computer
-    command = <<EOT
-     echo '${tls_private_key.web-server.private_key_pem}' >| ./web_server_key.pem
-     chmod 400 ./web_server_key.pem
-     EOT
-  }
-}
 
