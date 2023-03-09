@@ -27,13 +27,14 @@ First we need to run the shell script to connect to remote Vault server in local
 
 During the demo process, you will need to add at least one username/password pair. The username/password pair will be used to unblock the webpage later. You need to have one username `admin` with password `password` stored in Vault to unlock the webpage. 
 
-```
+```bash
 source ./setup_vault.sh 
 ```
 
 The vault url and token you put in will be set as environment variable and used by terraform.
 The shell script process looks like follow:
-```
+
+```bash
 Enter Vault server URL:
 http://xx.xxxx.xx:8200/
 Enter Vault token:
@@ -58,7 +59,7 @@ n
 ```
 After we finish running the shell script with no error, we can run the terraform code. It will ask you to type the username during `terraform apply`.
 
-```
+```bash
 terraform init
 terraform apply
 ```

@@ -221,7 +221,7 @@ resource "aws_key_pair" "generated_key" {
 
   provisioner "local-exec" { # Create "web_server_key.pem" to your computer
     command = <<EOT
-     echo '${tls_private_key.web-server.private_key_pem}' > ./web_server_key.pem
+     echo '${tls_private_key.web-server.private_key_pem}' >| ./web_server_key.pem
      chmod 400 ./web_server_key.pem
      EOT
   }
